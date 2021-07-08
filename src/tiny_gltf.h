@@ -335,8 +335,29 @@ TINYGLTF_VALUE_GET(Value::Object, object_value_)
 using ColorValue = std::array<double, 4>;
 
  struct Parameter {
-  bool bool_value;
-  int number_value = -1;
+  ~Parameter() {
+    if (bool_value) { 
+      //delete bool_value; 
+      //bool_value = 0;
+    }
+    if (number_value) {
+      //delete number_value;
+      //number_value = 0;
+    }
+   }
+  Parameter() {}
+  Parameter(const Parameter& other) {
+    if (other.bool_value)
+      bool_value = new bool(*other.bool_value);
+    if (other.number_value)
+      number_value = new double(*other.number_value);
+	string_value = other.string_value;
+	number_array = other.number_array;
+	json_double_value = other.json_double_value;
+	json_int_value = other.json_int_value;
+  }
+  bool *bool_value = 0;
+  double *number_value = 0;
   std::string string_value;
   std::vector<double> number_array;
   std::map<std::string, double> json_double_value;
@@ -466,17 +487,17 @@ struct Texture {
 };
 
 struct Shader {
-	int bufferView;
-	int type;
+  int bufferView;
+  int type;
 };
 
 struct Technique
 {
-	std::string tech_string; // use string tech temp
+  std::string tech_string; // use string tech temp
 };
 
 struct Program {
-	std::string prog_string; // use string program temp
+  std::string prog_string; // use string program temp
 };
 
 // Each extension should be stored in a ParameterMap.
@@ -700,6 +721,17 @@ struct Light {
   std::string type;
 };
 
+struct KHR{
+  //
+  std::vector<Program> programs;
+  std::vector<Shader> shaders;
+  std::vector<Technique> techniques;
+};
+
+struct Extension {
+  KHR KHR_techniques_webgl;
+};
+
 class Model {
  public:
   Model() {}
@@ -720,9 +752,7 @@ class Model {
   std::vector<Scene> scenes;
   std::vector<Light> lights;
   //
-  std::vector<Shader> shaders;
-  std::vector<Technique> techniques;
-  std::vector<Program> programs;
+  Extension extensions;
   //
   int defaultScene;
   std::vector<std::string> extensionsUsed;
@@ -809,7 +839,7 @@ class TinyGLTF {
 
   /// Write glb to file
   std::string Serialize(
-	  Model *model);
+    Model *model);
 
  private:
   ///
@@ -1498,7 +1528,7 @@ static bool ParseStringProperty(
   }
 
   if (ret) {
-    (*ret) = it.value();
+    *ret = it.value().get<std::string>();
   }
 
   return true;
@@ -2060,7 +2090,7 @@ static bool ParseParameterProperty(Parameter *param, std::string *err,
   } else if (ParseJSONProperty(&param->json_double_value, err, o, prop,
                                false)) {
     return true;
-  } else if (ParseBooleanProperty(&param->bool_value, err, o, prop, false)) {
+  } else if (ParseBooleanProperty(param->bool_value, err, o, prop, false)) {
     return true;
   } else {
     if (required) {
@@ -3298,7 +3328,7 @@ static void SerializeParameterMap(ParameterMap &param, json &o) {
       SerializeNumberArrayProperty<double>(paramIt->first,
                                            paramIt->second.number_array, o);
     }
-	else if (paramIt->second.json_double_value.size()) {
+  else if (paramIt->second.json_double_value.size()) {
       json json_double_value;
       for (std::map<std::string, double>::iterator it =
                paramIt->second.json_double_value.begin();
@@ -3307,23 +3337,23 @@ static void SerializeParameterMap(ParameterMap &param, json &o) {
       }
       o[paramIt->first] = json_double_value;
     }
-	else if (paramIt->second.json_int_value.size()) {
-		json json_int_value;
-		for (std::map<std::string, int>::iterator it =
-			paramIt->second.json_int_value.begin();
-			it != paramIt->second.json_int_value.end(); ++it) {
-			json_int_value[it->first] = it->second;
-		}
-		o[paramIt->first] = json_int_value;
-	}
-	else if (!paramIt->second.string_value.empty()) {
+  else if (paramIt->second.json_int_value.size()) {
+    json json_int_value;
+    for (std::map<std::string, int>::iterator it =
+      paramIt->second.json_int_value.begin();
+      it != paramIt->second.json_int_value.end(); ++it) {
+      json_int_value[it->first] = it->second;
+    }
+    o[paramIt->first] = json_int_value;
+  }
+  else if (!paramIt->second.string_value.empty()) {
       SerializeStringProperty(paramIt->first, paramIt->second.string_value, o);
-	}
-	else if (paramIt->second.number_value > -1) {
-		o[paramIt->first] = paramIt->second.number_value;
-	}
-	else {
-      o[paramIt->first] = paramIt->second.bool_value;
+  }
+  else if (paramIt->second.number_value) {
+    o[paramIt->first] = *paramIt->second.number_value;
+  }
+  else if (paramIt->second.bool_value){
+      o[paramIt->first] = *paramIt->second.bool_value;
     }
   }
 }
@@ -3433,11 +3463,11 @@ static void SerializeGltfBufferView(BufferView &bufferView,
   SerializeNumberProperty("buffer", bufferView.buffer, o);
   SerializeNumberProperty<size_t>("byteLength", bufferView.byteLength, o);
   if (bufferView.byteStride > 0) {
-	  SerializeNumberProperty<size_t>("byteStride", bufferView.byteStride, o);
+    SerializeNumberProperty<size_t>("byteStride", bufferView.byteStride, o);
   }
   SerializeNumberProperty<size_t>("byteOffset", bufferView.byteOffset, o);
   if (bufferView.target > 0) {
-	  SerializeNumberProperty("target", bufferView.target, o);
+    SerializeNumberProperty("target", bufferView.target, o);
   }
   if (bufferView.name.size()) {
     SerializeStringProperty("name", bufferView.name, o);
@@ -3446,23 +3476,23 @@ static void SerializeGltfBufferView(BufferView &bufferView,
 
 // Only external textures are serialized for now
 static void SerializeGltfImage(Image &image, json &o) {
-	if (image.uri.empty()) {
-		SerializeStringProperty("mimeType", image.mimeType, o);
-		SerializeNumberProperty<int>("bufferView", image.bufferView, o);
-	}
-	else {
-		SerializeStringProperty("uri", image.uri, o);
-	}
-	if (image.name.size()) {
-		SerializeStringProperty("name", image.name, o);
-	}
+  if (image.uri.empty()) {
+    SerializeStringProperty("mimeType", image.mimeType, o);
+    SerializeNumberProperty<int>("bufferView", image.bufferView, o);
+  }
+  else {
+    SerializeStringProperty("uri", image.uri, o);
+  }
+  if (image.name.size()) {
+    SerializeStringProperty("name", image.name, o);
+  }
 }
 
 static void SerializeGltfMaterial(Material &material, json &o) {
-	if (!material.shaderMaterial.empty()) {
-		o = json::parse(material.shaderMaterial);
-		return;
-	}
+  if (!material.shaderMaterial.empty()) {
+    o = json::parse(material.shaderMaterial);
+    return;
+  }
   if (material.extPBRValues.size()) {
     // Serialize PBR specular/glossiness material
     json values;
@@ -3573,7 +3603,7 @@ static void SerializeGltfNode(Node &node, json &o) {
   }
   SerializeStringProperty("name", node.name, o);
   if (node.children.size()) {
-	  SerializeNumberArrayProperty<int>("children", node.children, o);
+    SerializeNumberArrayProperty<int>("children", node.children, o);
   }
 }
 
@@ -3834,233 +3864,243 @@ bool TinyGLTF::WriteGltfSceneToFile(
 
 /// Write glb to file
 std::string TinyGLTF::Serialize(Model *model) {
+  json output;
+  // ACCESSORS
+  json accessors;
+  for (unsigned int i = 0; i < model->accessors.size(); ++i) {
+    json accessor;
+    SerializeGltfAccessor(model->accessors[i], accessor);
+    accessors.push_back(accessor);
+  }
+  output["accessors"] = accessors;
 
-	json output;
-	// ACCESSORS
-	json accessors;
-	for (unsigned int i = 0; i < model->accessors.size(); ++i) {
-		json accessor;
-		SerializeGltfAccessor(model->accessors[i], accessor);
-		accessors.push_back(accessor);
-	}
-	output["accessors"] = accessors;
+  // ANIMATIONS
+  if (model->animations.size()) {
+    json animations;
+    for (unsigned int i = 0; i < model->animations.size(); ++i) {
+      if (model->animations[i].channels.size()) {
+        json animation;
+        SerializeGltfAnimation(model->animations[i], animation);
+        animations.push_back(animation);
+      }
+    }
+    output["animations"] = animations;
+  }
 
-	// ANIMATIONS
-	if (model->animations.size()) {
-		json animations;
-		for (unsigned int i = 0; i < model->animations.size(); ++i) {
-			if (model->animations[i].channels.size()) {
-				json animation;
-				SerializeGltfAnimation(model->animations[i], animation);
-				animations.push_back(animation);
-			}
-		}
-		output["animations"] = animations;
-	}
+  // ASSET
+  json asset;
+  SerializeGltfAsset(model->asset, asset);
+  output["asset"] = asset;
 
-	// ASSET
-	json asset;
-	SerializeGltfAsset(model->asset, asset);
-	output["asset"] = asset;
+  // BUFFERS (We expect only one buffer here)
+  json buffers;
+  for (unsigned int i = 0; i < model->buffers.size(); ++i) {
+    json buffer;
+    SerializeNumberProperty("byteLength", model->buffers[i].data.size(), buffer);
+    if (model->buffers[i].name.size())
+      SerializeStringProperty("name", model->buffers[i].name, buffer);
+    buffers.push_back(buffer);
+  }
+  output["buffers"] = buffers;
 
-	// BUFFERS (We expect only one buffer here)
-	json buffers;
-	for (unsigned int i = 0; i < model->buffers.size(); ++i) {
-		json buffer;
-		SerializeNumberProperty("byteLength", model->buffers[i].data.size(), buffer);
-		if (model->buffers[i].name.size())
-			SerializeStringProperty("name", model->buffers[i].name, buffer);
-		buffers.push_back(buffer);
-	}
-	output["buffers"] = buffers;
+  // BUFFERVIEWS
+  json bufferViews;
+  for (unsigned int i = 0; i < model->bufferViews.size(); ++i) {
+    json bufferView;
+    SerializeGltfBufferView(model->bufferViews[i], bufferView);
+    bufferViews.push_back(bufferView);
+  }
+  output["bufferViews"] = bufferViews;
 
-	// BUFFERVIEWS
-	json bufferViews;
-	for (unsigned int i = 0; i < model->bufferViews.size(); ++i) {
-		json bufferView;
-		SerializeGltfBufferView(model->bufferViews[i], bufferView);
-		bufferViews.push_back(bufferView);
-	}
-	output["bufferViews"] = bufferViews;
+  // Extensions used
+  if (model->extensionsUsed.size()) {
+    SerializeStringArrayProperty("extensionsUsed", model->extensionsUsed,
+      output);
+  }
 
-	// Extensions used
-	if (model->extensionsUsed.size()) {
-		SerializeStringArrayProperty("extensionsUsed", model->extensionsUsed,
-			output);
-	}
+  // Extensions required
+  if (model->extensionsRequired.size()) {
+    SerializeStringArrayProperty("extensionsRequired",
+      model->extensionsRequired, output);
+  }
 
-	// Extensions required
-	if (model->extensionsRequired.size()) {
-		SerializeStringArrayProperty("extensionsRequired",
-			model->extensionsRequired, output);
-	}
+  // IMAGES
+  if (model->images.size()) {
+    json images;
+    for (unsigned int i = 0; i < model->images.size(); ++i) {
+      json image;
+      SerializeGltfImage(model->images[i], image);
+      images.push_back(image);
+    }
+    output["images"] = images;
+  }
+  // MATERIALS
+  if (model->materials.size()) {
+    json materials;
+    for (unsigned int i = 0; i < model->materials.size(); ++i) {
+      json material;
+      SerializeGltfMaterial(model->materials[i], material);
+      materials.push_back(material);
+    }
+    output["materials"] = materials;
+  }
+  // Ext
+  // output["extensions"] = json();
+  // output["extensions"]["KHR_techniques_webgl"] = json();
+  json shaders = json::array();
+  json programs = json::array();
+  json techniques = json::array();
+  // SHADER 
+  {
+    for (auto& shader : model->extensions.KHR_techniques_webgl.shaders) {
+      json val;
+      val["bufferView"] = shader.bufferView;
+      val["type"] = shader.type;
+      shaders.push_back(val);
+    }
+  }
+  // PROGREAM
+  {
+    for (auto& prog : model->extensions.KHR_techniques_webgl.programs) {
+      json val = json::parse(prog.prog_string);
+      programs.push_back(val);
+    }
+  }
+  // TECHNICH
+  {
+    for (auto& tech : model->extensions.KHR_techniques_webgl.techniques) {
+      json val = json::parse(tech.tech_string);
+      techniques.push_back(val);
+    }
+  }
+  json KHR_techniques_webgl = json({});
+  KHR_techniques_webgl["shaders"] = shaders;
+  KHR_techniques_webgl["programs"] = programs;
+  KHR_techniques_webgl["techniques"] = techniques;
+  json extensions = json({});
+  extensions["KHR_techniques_webgl"] = KHR_techniques_webgl;
+  output["extensions"] = extensions;
 
-	// IMAGES
-	if (model->images.size()) {
-		json images;
-		for (unsigned int i = 0; i < model->images.size(); ++i) {
-			json image;
-			SerializeGltfImage(model->images[i], image);
-			images.push_back(image);
-		}
-		output["images"] = images;
-	}
-	
+  // MESHES
+  json meshes;
+  for (unsigned int i = 0; i < model->meshes.size(); ++i) {
+    json mesh;
+    SerializeGltfMesh(model->meshes[i], mesh);
+    meshes.push_back(mesh);
+  }
+  output["meshes"] = meshes;
 
-	// MATERIALS
-	if (model->materials.size()) {
-		json materials;
-		for (unsigned int i = 0; i < model->materials.size(); ++i) {
-			json material;
-			SerializeGltfMaterial(model->materials[i], material);
-			materials.push_back(material);
-		}
-		output["materials"] = materials;
-	}
+  // NODES
+  json nodes;
+  for (unsigned int i = 0; i < model->nodes.size(); ++i) {
+    json node;
+    SerializeGltfNode(model->nodes[i], node);
+    nodes.push_back(node);
+  }
+  output["nodes"] = nodes;
 
-	// SHADER 
-	{
-		for (auto& shader : model->shaders) {
-			json val;
-			val["bufferView"] = shader.bufferView;
-			val["type"] = shader.type;
-			output["shaders"].push_back(val);
-		}
-	}
-	// PROGREAM
-	{
-		for (auto& prog : model->programs) {
-			json val = json::parse(prog.prog_string);
-			output["programs"].push_back(val);
-		}
-	}
-	// TECHNICH
-	{
-		for (auto& tech : model->techniques) {
-			json val = json::parse(tech.tech_string);
-			output["techniques"].push_back(val);
-		}
-	}
-	// MESHES
-	json meshes;
-	for (unsigned int i = 0; i < model->meshes.size(); ++i) {
-		json mesh;
-		SerializeGltfMesh(model->meshes[i], mesh);
-		meshes.push_back(mesh);
-	}
-	output["meshes"] = meshes;
+  // SCENE
+  SerializeNumberProperty<int>("scene", model->defaultScene, output);
 
-	// NODES
-	json nodes;
-	for (unsigned int i = 0; i < model->nodes.size(); ++i) {
-		json node;
-		SerializeGltfNode(model->nodes[i], node);
-		nodes.push_back(node);
-	}
-	output["nodes"] = nodes;
+  // SCENES
+  json scenes;
+  for (unsigned int i = 0; i < model->scenes.size(); ++i) {
+    json currentScene;
+    SerializeGltfScene(model->scenes[i], currentScene);
+    scenes.push_back(currentScene);
+  }
+  output["scenes"] = scenes;
 
-	// SCENE
-	SerializeNumberProperty<int>("scene", model->defaultScene, output);
+  // SKINS
+  if (model->skins.size()) {
+    json skins;
+    for (unsigned int i = 0; i < model->skins.size(); ++i) {
+      json skin;
+      SerializeGltfSkin(model->skins[i], skin);
+      skins.push_back(skin);
+    }
+    output["skins"] = skins;
+  }
 
-	// SCENES
-	json scenes;
-	for (unsigned int i = 0; i < model->scenes.size(); ++i) {
-		json currentScene;
-		SerializeGltfScene(model->scenes[i], currentScene);
-		scenes.push_back(currentScene);
-	}
-	output["scenes"] = scenes;
+  // TEXTURES
+  if (model->textures.size()) {
+    json textures;
+    for (unsigned int i = 0; i < model->textures.size(); ++i) {
+      json texture;
+      SerializeGltfTexture(model->textures[i], texture);
+      textures.push_back(texture);
+    }
+    output["textures"] = textures;
+  }
 
-	// SKINS
-	if (model->skins.size()) {
-		json skins;
-		for (unsigned int i = 0; i < model->skins.size(); ++i) {
-			json skin;
-			SerializeGltfSkin(model->skins[i], skin);
-			skins.push_back(skin);
-		}
-		output["skins"] = skins;
-	}
+  // SAMPLERS
+  if (model->samplers.size()) {
+    json samplers;
+    for (unsigned int i = 0; i < model->samplers.size(); ++i) {
+      json sampler;
+      SerializeGltfSampler(model->samplers[i], sampler);
+      samplers.push_back(sampler);
+    }
+    output["samplers"] = samplers;
+  }
 
-	// TEXTURES
-	if (model->textures.size()) {
-		json textures;
-		for (unsigned int i = 0; i < model->textures.size(); ++i) {
-			json texture;
-			SerializeGltfTexture(model->textures[i], texture);
-			textures.push_back(texture);
-		}
-		output["textures"] = textures;
-	}
+  // CAMERAS
+  if (model->cameras.size()) {
+    json cameras;
+    for (unsigned int i = 0; i < model->cameras.size(); ++i) {
+      json camera;
+      SerializeGltfCamera(model->cameras[i], camera);
+      cameras.push_back(camera);
+    }
+    output["cameras"] = cameras;
+  }
 
-	// SAMPLERS
-	if (model->samplers.size()) {
-		json samplers;
-		for (unsigned int i = 0; i < model->samplers.size(); ++i) {
-			json sampler;
-			SerializeGltfSampler(model->samplers[i], sampler);
-			samplers.push_back(sampler);
-		}
-		output["samplers"] = samplers;
-	}
+  // LIGHTS
+  if (model->lights.size()) {
+    json lights;
+    for (unsigned int i = 0; i < model->lights.size(); ++i) {
+      json light;
+      SerializeGltfLight(model->lights[i], light);
+      lights.push_back(light);
+    }
+    output["lights"] = lights;
+  }
 
-	// CAMERAS
-	if (model->cameras.size()) {
-		json cameras;
-		for (unsigned int i = 0; i < model->cameras.size(); ++i) {
-			json camera;
-			SerializeGltfCamera(model->cameras[i], camera);
-			cameras.push_back(camera);
-		}
-		output["cameras"] = cameras;
-	}
+  std::string json_out = output.dump();
+  while (json_out.size() % 4 != 0) {
+    json_out.push_back(0x20);
+  }
+  std::string bin_out;
+  std::string final_buf;
 
-	// LIGHTS
-	if (model->lights.size()) {
-		json lights;
-		for (unsigned int i = 0; i < model->lights.size(); ++i) {
-			json light;
-			SerializeGltfLight(model->lights[i], light);
-			lights.push_back(light);
-		}
-		output["lights"] = lights;
-	}
+  uint32_t json_length = json_out.size();
+  uint32_t bin_length = 0;
 
-	std::string json_out = output.dump();
-	while (json_out.size() % 4 != 0) {
-		json_out.push_back(0x20);
-	}
-	std::string bin_out;
-	std::string final_buf;
+  // we will append mesh\image\shader\.. into BIN
+  if (model->buffers.size() > 0) {
+    auto& buffer_data = model->buffers[0].data;
+    bin_out.append(buffer_data.data(), buffer_data.data() + buffer_data.size());
+    while (bin_out.size() % 4 != 0) {
+      bin_out.push_back(0x00);
+    }
+    bin_length = buffer_data.size();
+  }
+  final_buf += "glTF";
+  int version = 2;
+  final_buf.append((char*)&version, (char*)&version + 4);
+  int total_len = 12 + 16 + json_length + bin_length;
+  final_buf.append((char*)&total_len, (char*)&total_len + 4);
+  // JSON
+  final_buf.append((char*)&json_length, (char*)&json_length + 4);
+  final_buf += "JSON";
+  final_buf.append(json_out.data(), json_out.data() + json_out.size());
+  // BIN
+  final_buf.append((char*)&bin_length, (char*)&bin_length + 4);
+  final_buf += "BIN";
+  final_buf.push_back(0x00);
+  final_buf.append(bin_out.data(), bin_out.data() + bin_out.size());
 
-	uint32_t json_length = json_out.size();
-	uint32_t bin_length = 0;
-
-	// we will append mesh\image\shader\.. into BIN
-	if (model->buffers.size() > 0) {
-		auto& buffer_data = model->buffers[0].data;
-		bin_out.append(buffer_data.data(), buffer_data.data() + buffer_data.size());
-		while (bin_out.size() % 4 != 0) {
-			bin_out.push_back(0x00);
-		}
-		bin_length = buffer_data.size();
-	}
-	final_buf += "glTF";
-	int version = 2;
-	final_buf.append((char*)&version, (char*)&version + 4);
-	int total_len = 12 + 16 + json_length + bin_length;
-	final_buf.append((char*)&total_len, (char*)&total_len + 4);
-	// JSON
-	final_buf.append((char*)&json_length, (char*)&json_length + 4);
-	final_buf += "JSON";
-	final_buf.append(json_out.data(), json_out.data() + json_out.size());
-	// BIN
-	final_buf.append((char*)&bin_length, (char*)&bin_length + 4);
-	final_buf += "BIN";
-	final_buf.push_back(0x00);
-	final_buf.append(bin_out.data(), bin_out.data() + bin_out.size());
-
-	return final_buf;
+  return final_buf;
 }
 
 }  // namespace tinygltf
